@@ -1,0 +1,72 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/tenboxAdmins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/tenboxAdmins/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isApprovedUser() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/tenboxUsers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/tenboxUsers/$(request.auth.uid)).data.approved == true
+        && get(/databases/$(database)/documents/tenboxUsers/$(request.auth.uid)).data.status == 'approved';
+    }
+
+    match /tenboxAdmins/{adminId} {
+      allow read: if request.auth != null && request.auth.uid == adminId;
+      allow create, update, delete: if false;
+    }
+
+    match /tenboxUsers/{userId} {
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.approved == false
+        && request.resource.data.status == 'pending';
+
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+
+      allow update: if isAdmin()
+        || (
+          request.auth != null
+          && request.auth.uid == userId
+          && resource.data.approved == true
+          && resource.data.status == 'approved'
+          && request.resource.data.approved == resource.data.approved
+          && request.resource.data.status == resource.data.status
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    match /tenboxDeletedUsers/{userId} {
+      allow create, update, read: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /tenboxUsageLogs/{logId} {
+      allow create: if isApprovedUser();
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /tenboxSurveyResponses/{responseId} {
+      allow create: if isApprovedUser();
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /tenboxFeedback/{feedbackId} {
+      allow create: if isApprovedUser();
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
